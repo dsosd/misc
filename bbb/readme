@@ -1,0 +1,5 @@
+requires antlr4 and python lib for antlr4
+
+antlr4 executable can be installed in various ways, including package managers and the antlr4 website
+
+python lib is `pip3 install antlr4-python3-runtime=={VERSION}`, where the version matches the one for the executable

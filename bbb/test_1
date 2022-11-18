@@ -1,0 +1,53 @@
+00001111222233334444555566667777
+
+boolean: u1
+ubyte: u8
+ushort: u16
+uint: u32
+ulong: u64
+
+byte: i8
+short: i16
+int: i32
+long: i64
+
+array: i32 [0, 64)
+
+struct: struct{
+	foo: u1
+	bar: _
+}
+
+enum: enum{
+	apple: _
+	orange: _
+	caramel: _
+}
+
+union: union{
+	foo: u8
+	bar: i8
+	baz: u64
+	_: u8 [20]
+	barbar: u64 [20, 45]
+}
+
+nested: struct{
+	nested: struct{
+		nested: struct{
+			nested: union{
+				nested: union{
+					nested: union{
+						nested: enum{
+							nested: enum{
+								nested: enum{
+									inner: u8
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}

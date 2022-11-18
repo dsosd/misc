@@ -1,0 +1,14 @@
+00001111222233334444555566667777
+
+boolean: u1
+ubyte: u8
+ushort: u16
+uint: u32
+ulong: u64
+
+byte: i8
+short: i16
+int: i32
+long: i64
+
+array: i32 [0, 64)

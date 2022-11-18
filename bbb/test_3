@@ -1,0 +1,16 @@
+01010101232323234545454567676767
+
+_: struct{
+	i: _
+	like: _
+	trains: u1
+	@aaaabbbbccccddddeeeeffff00001111
+	so_one_day: enum{
+		he_passed_by_the_school: _
+		met_a_nice_girl: _
+	}
+	and_he_said: struct{
+		i_like_trains: u1
+	}
+}
+@00000000000000000000000000000000
