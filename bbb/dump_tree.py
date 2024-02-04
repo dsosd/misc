@@ -1,8 +1,9 @@
+import enum
 import math
 import re
 import sys
 
-from antlr4 import StdinStream as Stream, CommonTokenStream as Token_stream
+from antlr4 import FileStream as Stream_file, StdinStream as Stream_stdin, CommonTokenStream as Token_stream
 
 from out.bbbLexer import bbbLexer as Lexer
 from out.bbbListener import bbbListener as Listener
@@ -80,7 +81,7 @@ def override(func):
 #globals
 
 debug_ast = False
-debug_sizes = True
+debug_sizes = False
 
 #^
 
@@ -168,11 +169,11 @@ class Pack:
 				raise Exception("incorrect num of children")
 
 			temp = Type()
-			temp.name = self.children[0].data[0]
+			temp.type = Type_t.from_str(self.children[0].data[0])
 			temp.range = self.children[1]
 
 			#handle anon type
-			if temp.name == "_":
+			if temp.type == Type_t._:
 				#if self.range is not the default range from collapse_ranges()
 				if temp.range.start != 1 or temp.range.end != 2:
 					raise Exception("anon type has range")
@@ -233,7 +234,7 @@ class Pack:
 					raise Exception("invalid child type: {}".format(x.type.encode("utf-8")))
 
 			self.children = [temp]
-		elif type(self) == Member and self.type.name in ["struct", "enum", "union"]:
+		elif type(self) == Member and self.type.type in Type_t.aggregate:
 			temp = Aggregate()
 			temp.elements = [x.children[0] for x in self.type.rest]
 
@@ -242,6 +243,19 @@ class Pack:
 		for x in self.iterator():
 			if x is not None:
 				x.collapse_aggregates()
+
+	def fully_resolved(self):
+		for x in self.iterator():
+			if x is not None:
+				if not x.fully_resolved():
+					return False
+
+		return True
+
+	def resolve(self, hash_to_ast):
+		for x in self.iterator():
+			if x is not None:
+				x.resolve(hash_to_ast)
 
 class Range(Pack):
 	@override_enforce
@@ -270,6 +284,7 @@ class Range(Pack):
 		return self.start
 
 	#^
+	#inclusive. not exclusive like self.end
 	@override
 	def max_size(self):
 		return self.end - 1
@@ -301,39 +316,103 @@ class Hash(Pack):
 	def max_size(self):
 		return 16
 
+class Type_t_internal(enum.Enum):
+	u1 = enum.auto()
+	u8 = enum.auto()
+	u16 = enum.auto()
+	u32 = enum.auto()
+	u64 = enum.auto()
+	i8 = enum.auto()
+	i16 = enum.auto()
+	i32 = enum.auto()
+	i64 = enum.auto()
+	_ = enum.auto()
+	struct = enum.auto()
+	enum_ = enum.auto()
+	union = enum.auto()
+
+	def __str__(self):
+		return Type_t.to_str(self)
+
+class Type_t:
+	u1 = Type_t_internal.u1
+	u8 = Type_t_internal.u8
+	u16 = Type_t_internal.u16
+	u32 = Type_t_internal.u32
+	u64 = Type_t_internal.u64
+	i8 = Type_t_internal.i8
+	i16 = Type_t_internal.i16
+	i32 = Type_t_internal.i32
+	i64 = Type_t_internal.i64
+	_ = Type_t_internal._
+	struct = Type_t_internal.struct
+	enum = Type_t_internal.enum_
+	union = Type_t_internal.union
+
+	primitive = [u1, u8, u16, u32, u64, i8, i16, i32, i64]
+	aggregate = [struct, enum, union]
+
+	all = [*primitive, _, *aggregate]
+
+	type_to_str = {
+		u1: "u1",
+		u8: "u8",
+		u16: "u16",
+		u32: "u32",
+		u64: "u64",
+		i8: "i8",
+		i16: "i16",
+		i32: "i32",
+		i64: "i64",
+		_: "_",
+		struct: "struct",
+		enum: "enum",
+		union: "union"
+	}
+
+	str_to_type = {v: k for k, v in type_to_str.items()}
+
+	@classmethod
+	def to_str(self, data):
+		return self.type_to_str[data]
+
+	@classmethod
+	def from_str(self, data):
+		return self.str_to_type[data]
+
 class Type(Pack):
 	@override_enforce
 	def __init__(self):
 		super().__init__()
-		self.name = ""
+		self.type = None
 		self.range = Range()
 		self.rest = None
 
 	def __repr__(self):
 		if self.rest is not None:
-			return "{} {} {{{}}}".format(self.name, self.range, " ".join([x.__repr__() for x in self.rest]))
+			return "{} {} {{{}}}".format(self.type, self.range, " ".join([x.__repr__() for x in self.rest]))
 		elif self.range is not None:
-			return "{} {}".format(self.name, self.range)
+			return "{} {}".format(self.type, self.range)
 		else:
 			return self.name
 
 	@override
 	def validate(self):
 		#anonymous type
-		if self.name == "_":
+		if self.type == Type_t._:
 			if self.range is not None or self.rest is not None:
 				raise Exception("anonymous type has extra info")
 			return
 
 		#aggregate and base types
-		if self.name in "struct enum union u1 u8 u16 u32 u64 i8 i16 i32 i64".split(" "):
+		if self.type in Type_t.primitive + Type_t.aggregate:
 			self.range.validate()
 
 			if self.rest is not None:
 				for x in self.rest:
 					x.validate()
 		else:
-			raise Exception("invalid type: {}".format(self.name))
+			raise Exception("invalid type: {}".format(self.type))
 
 	@override
 	def iterator(self):
@@ -365,37 +444,40 @@ class Type(Pack):
 		base_size = 0
 		overhead = 0
 
-		if self.name == "_":
+		if self.type == Type_t._:
 			return 0
-		elif self.name == "struct":
+		elif self.type == Type_t.struct:
 			base_size = sum([x.min_size() for x in self.rest])
-		elif self.name == "enum":
+		elif self.type == Type_t.enum:
 			base_size = min([x.min_size() for x in self.rest])
 
 			#MAGIC need 2 extra bits to indicate how many additional bytes we need to read enum size
 			overhead = self.store_bits_in_bytes(2 + self.store_num_in_bits(len(self.rest)))
-		elif self.name == "union":
+		elif self.type == Type_t.union:
 			base_size = 0
 
 			#MAGIC 1 bit per element
 			overhead = self.store_bits_in_bytes(len(self.rest))
-		elif self.name in "u1".split(" "):
-			#TODO bit masking
+		elif self.type == Type_t.u1:
+			#bit packing calculated below
+			pass
+		elif self.type in [Type_t.u8, Type_t.i8]:
 			base_size = 1
-		elif self.name in "u8 i8".split(" "):
-			base_size = 1
-		elif self.name in "u16 i16".split(" "):
+		elif self.type in [Type_t.u16, Type_t.i16]:
 			base_size = 2
-		elif self.name in "u32 i32".split(" "):
+		elif self.type in [Type_t.u32, Type_t.i32]:
 			base_size = 4
-		elif self.name in "u64 i64".split(" "):
+		elif self.type in [Type_t.u64, Type_t.i64]:
 			base_size = 8
 		else:
-			raise Exception("invalid type: {}".format(self.name.encode("utf-8")))
+			raise Exception("invalid type: {}".format(self.type))
 
 		count_overhead = self.store_bits_in_bytes(self.store_num_in_bits(self.range.max_size() - self.range.min_size() + 1))
 
-		ret = self.range.min_size() * (base_size + overhead) + count_overhead
+		if self.type != Type_t.u1:
+			ret = self.range.min_size() * (base_size + overhead) + count_overhead
+		else:
+			ret = self.store_bits_in_bytes(self.range.min_size()) + count_overhead
 
 		if debug_sizes:
 			print(self.__repr__(), ret, "|", self.range.min_size(), base_size, overhead, count_overhead)
@@ -406,37 +488,40 @@ class Type(Pack):
 		base_size = 0
 		overhead = 0
 
-		if self.name == "_":
+		if self.type == Type_t._:
 			return 0
-		elif self.name == "struct":
+		elif self.type == Type_t.struct:
 			base_size = sum([x.max_size() for x in self.rest])
-		elif self.name == "enum":
+		elif self.type == Type_t.enum:
 			base_size = max([x.max_size() for x in self.rest])
 
 			#MAGIC need 2 extra bits to indicate how many additional bytes we need to read enum size
 			overhead = self.store_bits_in_bytes(2 + self.store_num_in_bits(len(self.rest)))
-		elif self.name == "union":
+		elif self.type == Type_t.union:
 			base_size = sum([x.max_size() for x in self.rest])
 
 			#MAGIC 1 bit per element
 			overhead = self.store_bits_in_bytes(len(self.rest))
-		elif self.name in "u1".split(" "):
-			#TODO bit masking
+		elif self.type == Type_t.u1:
+			#bit packing calculated below
+			pass
+		elif self.type in [Type_t.u8, Type_t.i8]:
 			base_size = 1
-		elif self.name in "u8 i8".split(" "):
-			base_size = 1
-		elif self.name in "u16 i16".split(" "):
+		elif self.type in [Type_t.u16, Type_t.i16]:
 			base_size = 2
-		elif self.name in "u32 i32".split(" "):
+		elif self.type in [Type_t.u32, Type_t.i32]:
 			base_size = 4
-		elif self.name in "u64 i64".split(" "):
+		elif self.type in [Type_t.u64, Type_t.i64]:
 			base_size = 8
 		else:
-			raise Exception("invalid type: {}".format(self.name.encode("utf-8")))
+			raise Exception("invalid type: {}".format(self.type))
 
 		count_overhead = self.store_bits_in_bytes(self.store_num_in_bits(self.range.max_size() - self.range.min_size() + 1))
 
-		ret = self.range.max_size() * (base_size + overhead) + count_overhead
+		if self.type != Type_t.u1:
+			ret = self.range.max_size() * (base_size + overhead) + count_overhead
+		else:
+			ret = self.store_bits_in_bytes(self.range.max_size()) + count_overhead
 
 		if debug_sizes:
 			print(self.__repr__(), ret, "|", self.range.max_size(), base_size, overhead, count_overhead)
@@ -519,6 +604,24 @@ class Aggregate(Pack):
 	def max_size(self):
 		return sum([x.max_size() for x in self.elements])
 
+	@override
+	def resolve(self, hash_to_ast):
+		mutated = False
+
+		for i in range(len(self.elements)):
+			if type(self.elements[i]) == Forward_type and self.elements[i].hash in hash_to_ast:
+				mutated = True
+				self.elements[i] = hash_to_ast[self.elements[i].hash]
+
+		if mutated:
+			self.elements = [[x] if type(x) != list else x for x in self.elements]
+			self.elements = [y for x in self.elements for y in x]
+
+		for x in self.iterator():
+			if x is not None:
+				x.resolve(hash_to_ast)
+
+
 class Forward_type(Pack):
 	@override_enforce
 	def __init__(self):
@@ -555,6 +658,10 @@ class Forward_type(Pack):
 		if debug_sizes:
 			print(self.__repr__(), ret, "|", 1, ret, 0, 0)
 		return ret
+
+	@override
+	def fully_resolved(self):
+		return False
 
 class Basic_listener(Listener):
 	@override_enforce
@@ -741,7 +848,7 @@ def simplify_pack(data):
 	data.collapse_aggregates()
 
 def main(stats):
-	data = Stream()
+	data = Stream_stdin()
 	lexer = Lexer(data)
 	tokens = Token_stream(lexer)
 

@@ -1,0 +1,58 @@
+00000000000000000000000000000000
+
+header: enum{
+	full: struct{
+		id: u8 [16]
+		human_id: u8 [24, 34]
+
+		namespace: struct [0, 32){
+			@e9d19be610ff7256b6fde30fed9fe5f0
+		}
+		canonical_name: struct{
+			@e9d19be610ff7256b6fde30fed9fe5f0
+		}
+		alternative_names: struct [0, 64){
+			@e9d19be610ff7256b6fde30fed9fe5f0
+		}
+
+		system_tags: struct [0, 256){
+			name: u8 [1, 128]
+		}
+		user_tags: struct [0, 64]{
+			parent_level: u8
+			segments: struct [1, 32]{
+				@e9d19be610ff7256b6fde30fed9fe5f0
+			}
+		}
+
+		title: u8 [0, 1024]
+	}
+	partially_redacted: union{
+		id: u8 [16]
+		human_id: u8 [24, 34]
+
+		namespace: struct [0, 32){
+			@e9d19be610ff7256b6fde30fed9fe5f0
+		}
+		canonical_name: struct{
+			@e9d19be610ff7256b6fde30fed9fe5f0
+		}
+		alternative_names: struct [0, 64){
+			@e9d19be610ff7256b6fde30fed9fe5f0
+		}
+
+		system_tags: struct [0, 256){
+			name: u8 [1, 128]
+		}
+		user_tags: struct [0, 64]{
+			parent_level: u8
+			segments: struct [1, 32]{
+				@e9d19be610ff7256b6fde30fed9fe5f0
+			}
+		}
+
+		title: u8 [0, 1024]
+	}
+}
+
+content: u8 [0, 4194304]

@@ -1,0 +1,1 @@
+python3 ../full_code_gen.py py schemas_in schemas_out generated.py
